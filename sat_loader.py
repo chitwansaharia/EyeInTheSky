@@ -6,19 +6,23 @@ import skimage
 from skimage import transform
 import numpy as np
 
-class SatelliteDataset(Dataset):
-    """Satellite dataset."""
 
-    def __init__(self, x_dir, y_dir, root_dir, crop_dim):
+
+class SatelliteDataset(Dataset):
+    """
+    Satellite dataset loader.
+    Only to be used during training and validation
+    """
+
+    def __init__(self, x_dir, y_dir, root_dir, crop_dim, num_channels):
         """
         Args:
             x_dir (string) : directory that contains satellite images.
             y_dir (string) : directory that contains segmentation labels.
             root_dir (string) : root directory containing the dataset.
-            transform (callable, optional): Optional transform to be applied
-                on a sample.
         """
         self.crop_dim = crop_dim
+        self.num_channels = num_channels
         x_list, y_list = [], []
         x_path = "{}/{}".format(root_dir, x_dir)
         y_path = "{}/{}".format(root_dir, y_dir)
@@ -26,7 +30,7 @@ class SatelliteDataset(Dataset):
         for file in os.listdir(x_path):
             image = tiff.imread("{}/{}".format(x_path, file))
             x_list.append(skimage.exposure.rescale_intensity(image, in_range='image', out_range='uint8'))
-            y_list.append(tiff.imread("{}/{}".format(y_path, file)))
+            y_list.append(np.load("{}/{}".format(y_path, file)))
 
         x_list, y_list = np.matrix(x_list), np.matrix(y_list)
         indexes = np.arange(0, x_list.shape[0])
@@ -51,7 +55,10 @@ class SatelliteDataset(Dataset):
         _rotate_angle = np.random.uniform(0, 360)
 
         rotated_combined = skimage.transform.rotate(cropped_combined, angle=3, mode='symmetric',preserve_range=True)
-        return rotated_combined[:,:,:-1], rotated_combined[:,:,-1]
+        return self.normalize(rotated_combined[:,:,:self.num_channels]).astype(np.float32), rotated_combined[:,:,-1]
+
+    def normalize(self, image):
+        return image/255.0
 
 
 class customRandomCrop(object):
