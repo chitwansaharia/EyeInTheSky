@@ -5,7 +5,8 @@ from random import shuffle
 import skimage
 from skimage import transform
 import numpy as np
-
+import os
+import random
 
 
 class SatelliteDataset(Dataset):
@@ -28,15 +29,16 @@ class SatelliteDataset(Dataset):
         y_path = "{}/{}".format(root_dir, y_dir)
 
         for file in os.listdir(x_path):
+            file_name = file.split('.')
+            if len(file_name) != 2 or file_name[1] != 'tif':
+                continue
+            file_name = file_name[0]
             image = tiff.imread("{}/{}".format(x_path, file))
             x_list.append(skimage.exposure.rescale_intensity(image, in_range='image', out_range='uint8'))
-            y_list.append(np.load("{}/{}".format(y_path, file)))
+            y_list.append(np.expand_dims(np.load("{}/{}".format(y_path, '{}.npy'.format(file_name))), axis=2))
 
-        x_list, y_list = np.matrix(x_list), np.matrix(y_list)
-        indexes = np.arange(0, x_list.shape[0])
-        np.random.shuffle(indexes)
-        self.images, self.masks = x_list[indexes, :, :, :], y_list[indexes, :, :, :]
-        self.length = self.images.shape[0]
+        self.images, self.masks = x_list, y_list
+        self.length = len(self.images)
 
         # Custom Transforms
         self.rcrop = customRandomCrop(crop_dim)
@@ -45,17 +47,17 @@ class SatelliteDataset(Dataset):
         return 100*self.length
 
     def __getitem__(self, idx):
-        sample_x, sample_y = self.images[idx%self.length, :, :, :], self.masks[idx%self.length, :, :, :]
+        sample_x, sample_y = self.images[idx%self.length], self.masks[idx%self.length]
         combined = np.concatenate([sample_x, sample_y], axis=2)
         cropped_combined = self.rcrop(combined)
-
         assert cropped_combined.shape[0] == self.crop_dim
         assert cropped_combined.shape[1] == self.crop_dim
 
         _rotate_angle = np.random.uniform(0, 360)
 
         rotated_combined = skimage.transform.rotate(cropped_combined, angle=3, mode='symmetric',preserve_range=True)
-        return self.normalize(rotated_combined[:,:,:self.num_channels]).astype(np.float32), rotated_combined[:,:,-1]
+        final_image = np.transpose(rotated_combined[:,:,:self.num_channels], (2,0,1))
+        return self.normalize(final_image.astype(np.float32)), rotated_combined[:,:,-1]
 
     def normalize(self, image):
         return image/255.0
@@ -63,15 +65,12 @@ class SatelliteDataset(Dataset):
 
 class customRandomCrop(object):
     def __init__(self, size):
-        if isinstance(size, numbers.Number):
-            self.size = (int(size), int(size))
-        else:
-            self.size = size
+        self.size = (int(size), int(size))
 
     @staticmethod
     def get_params(img, output_size):
-        w, h = img.shape[0], img.shape[1]
-        th, tw, c = output_size, img.shape[2]
+        h, w = img.shape[0], img.shape[1]
+        th, tw, c = output_size[0], output_size[1], img.shape[2]
         if w == tw and h == th:
             return 0, 0, h, w
 

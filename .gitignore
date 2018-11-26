@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 DataAugment/
 *.ipynb
+data/
 
 # C extensions
 *.so

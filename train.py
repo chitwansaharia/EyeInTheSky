@@ -3,18 +3,24 @@ import parser
 from tensorboardX import SummaryWriter
 from utils import *
 from comet_ml import Experiment
-from models import *
 from sat_loader import SatelliteDataset
 import sklearn
+from sklearn import metrics
+from models import unet
+import argparse
+import os
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-parser = ArgumentParser()
+parser = argparse.ArgumentParser()
 parser.add_argument("--model", default=None,
                     help="Name of the model to be trained")
-parser.add_argument("--batch-size", default=5,
+parser.add_argument("--batch-size", default=10,
                     help="Batch size used while training/validating")
 parser.add_argument("--lr", type=float, default=1e-3,
                     help="learning rate for training (default: 1e-3)")
-parser.add_argument("--epochs", type=int, default=20,
+parser.add_argument("--epochs", type=int, default=1000,
                     help="number of epochs to be trained (default: 20)")
 parser.add_argument("--max-grad-norm", type=float, default=10,
                     help="maximum gradient clipping norm")
@@ -28,7 +34,10 @@ parser.add_argument("--num-channels", type=int, default=4,
                     help="number of channels of imput image to use (3 or 4)")
 parser.add_argument("--crop-dim", type=int, default=256,
                     help="dimension of the cropped image")
+parser.add_argument("--log-interval", type=int, default=10,
+                    help="logging interval")
 
+args = parser.parse_args()
 print(args)
 
 experiment = Experiment(api_key="7bEW5h9UoEOpQQyNLpt36lY66", project_name=args.model)
@@ -58,7 +67,7 @@ def run_epoch(model, epoch, data_loader, device, mode="train", writer=None):
     i = 0
 
     for image, mask in data_loader:
-        image, true_mask = data.to(device), mask.to(device)
+        image, true_mask = image.to(device), mask.to(device).long()
         if mode is not "train":
             with torch.no_grad():
                 out_mask = model(image)
@@ -73,23 +82,31 @@ def run_epoch(model, epoch, data_loader, device, mode="train", writer=None):
             total_grad_norm += grad_norm.item()
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
             optimizer.step()
+            total_grad_norm += grad_norm.item()
 
         _, pred_labels = torch.max(out_mask.view(-1, num_classes), 1)
         total_score += sklearn.metrics.cohen_kappa_score(pred_labels.cpu().numpy(), true_mask.view(-1).cpu().numpy())
 
         total_loss += loss.item()
-        total_grad_norm += grad_norm.item()
+
 
         if i % args.log_interval == 0:
             tb_writer.add_scalar("{}_loss".format(mode), total_loss/(i+1))
-            tb_writer.add_scalar("{}_grad_norm".format(mode), total_grad_norm/(i+1))
+            if mode == "train":
+                tb_writer.add_scalar("{}_grad_norm".format(mode), total_grad_norm/(i+1))
+            tb_writer.add_scalar("{}_kappa_score".format(mode), total_score/(i+1))
+            print("Epoch {} | Batch {} |  Loss {} | Grad Norm {} | Kappa Score {}".format(epoch+1,
+                                                                                          i+1,
+                                                                                          total_loss/(i+1),
+                                                                                          total_grad_norm/(i+1),
+                                                                                          total_score/(i+1)))
 
         i += 1
-    return total_loss/i, total_score
+    return total_loss/i, total_score/i
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    num_classes = 8
+    num_classes = 9
     done_epochs = 0
     best_metric = 0
 
@@ -120,12 +137,13 @@ if __name__ == "__main__":
                                 shuffle = False
                                 )
 
-    model = UNet(args.num_channels, num_classes)
+    model = unet.UNet(args.num_channels, num_classes)
 
-    optimizer = torch.optim.Adam(model.parameters(),
+    optimizer = torch.optim.SGD(model.parameters(),
                            lr=args.lr
                            )
-    loss_criterion = nn.CrossEntropy()
+
+    loss_criterion = nn.CrossEntropyLoss()
 
     # Resuming the training from a saved model
     if args.resume:
@@ -155,7 +173,7 @@ if __name__ == "__main__":
         tb_writer.add_scalar("train_metric_per_epoch", train_metric, epoch)
 
         # Validating
-        valid_loss, valid_metric = run_epoch(model, epoch, valid_loader, device, "valid", tb_writer)
+        valid_loss, valid_metric = run_epoch(model, epoch, val_loader, device, "valid", tb_writer)
         experiment.log_metric("valid_loss",valid_loss, step=epoch)
         experiment.log_metric("valid_metric",valid_metric, step=epoch)
         tb_writer.add_scalar("valid_loss_per_epoch", valid_loss, epoch)
