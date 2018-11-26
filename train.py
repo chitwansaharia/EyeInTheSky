@@ -114,19 +114,16 @@ if __name__ == "__main__":
     train_y_dir = 'gt'
     val_x_dir = 'valid_sat'
     val_y_dir = 'valid_gt'
-    root_dir = '/mnt/blossom/more/sheshansh/EyeInTheSky/data/'
+    root_dir = 'data'
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     # Creating logging and saved models directory
     create_if_not_exists()
 
-    base_model = '/mnt/blossom/more/sheshansh/EyeInTheSky/data/saved_models/'
-    model_path = os.path.join(base_model, args.model)
-    # model_path = "{}/{}.pt".format("saved_models", args.model)
-    base_log = '/mnt/blossom/more/sheshansh/EyeInTheSky/data/tb_logs/'
-    log_path = os.path.join(base_log, args.model)
-    # log_path = "{}/{}".format("tb_logs", args.model)
+    model_path = "{}/{}.pt".format("saved_models", args.model)
+    log_path = "{}/{}".format("tb_logs", args.model)
+
     tb_writer = SummaryWriter(log_path)
 
     # Dataset Loader
