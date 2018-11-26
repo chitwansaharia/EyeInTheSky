@@ -16,7 +16,7 @@ import torch.nn.functional as F
 parser = argparse.ArgumentParser()
 parser.add_argument("--model", default=None,
                     help="Name of the model to be trained")
-parser.add_argument("--batch-size", default=10,
+parser.add_argument("--batch-size", type=int, default=10,
                     help="Batch size used while training/validating")
 parser.add_argument("--lr", type=float, default=1e-3,
                     help="learning rate for training (default: 1e-3)")
@@ -36,6 +36,10 @@ parser.add_argument("--crop-dim", type=int, default=256,
                     help="dimension of the cropped image")
 parser.add_argument("--log-interval", type=int, default=10,
                     help="logging interval")
+parser.add_argument("--decay-rate", type=float, default=0.96,
+                    help="decay rate for learning rate")
+parser.add_argument("--decay-step", type=int, default=2,
+                    help="decay step for learning rate")
 
 args = parser.parse_args()
 print(args)
@@ -143,6 +147,7 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(model.parameters(),
                            lr=args.lr
                            )
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.decay_step, gamma=args.decay_rate)
 
     loss_criterion = nn.CrossEntropyLoss()
 
@@ -165,6 +170,7 @@ if __name__ == "__main__":
 
     for epoch in range(done_epochs, done_epochs + args.epochs):
         experiment.log_current_epoch(epoch)
+        lr_scheduler.step()
 
         # Training
         train_loss, train_metric = run_epoch(model, epoch, train_loader, device, "train", tb_writer)
