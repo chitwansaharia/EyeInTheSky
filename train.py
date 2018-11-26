@@ -73,7 +73,7 @@ def run_epoch(model, epoch, data_loader, device, mode="train", writer=None):
                 out_mask = model(image)
         else:
             out_mask = model(image)
-        loss = loss_criterion(out_mask.view(-1, num_classes), true_mask.view(-1))
+        loss = loss_criterion(out_mask, true_mask)
 
         if mode == "train":
             optimizer.zero_grad()
@@ -84,7 +84,7 @@ def run_epoch(model, epoch, data_loader, device, mode="train", writer=None):
             optimizer.step()
             total_grad_norm += grad_norm.item()
 
-        _, pred_labels = torch.max(out_mask.view(-1, num_classes), 1)
+        pred_labels = torch.argmax(out_mask, 1).view(-1)
         total_score += sklearn.metrics.cohen_kappa_score(pred_labels.cpu().numpy(), true_mask.view(-1).cpu().numpy())
 
         total_loss += loss.item()
@@ -114,15 +114,19 @@ if __name__ == "__main__":
     train_y_dir = 'gt'
     val_x_dir = 'valid_sat'
     val_y_dir = 'valid_gt'
-    root_dir = 'data'
+    root_dir = '/mnt/blossom/more/sheshansh/EyeInTheSky/data/'
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     # Creating logging and saved models directory
     create_if_not_exists()
 
-    model_path = "{}/{}.pt".format("saved_models", args.model)
-    log_path = "{}/{}".format("tb_logs", args.model)
+    base_model = '/mnt/blossom/more/sheshansh/EyeInTheSky/data/saved_models/'
+    model_path = os.path.join(base_model, args.model)
+    # model_path = "{}/{}.pt".format("saved_models", args.model)
+    base_log = '/mnt/blossom/more/sheshansh/EyeInTheSky/data/tb_logs/'
+    log_path = os.path.join(base_log, args.model)
+    # log_path = "{}/{}".format("tb_logs", args.model)
     tb_writer = SummaryWriter(log_path)
 
     # Dataset Loader
@@ -139,7 +143,7 @@ if __name__ == "__main__":
 
     model = unet.UNet(args.num_channels, num_classes)
 
-    optimizer = torch.optim.SGD(model.parameters(),
+    optimizer = torch.optim.Adam(model.parameters(),
                            lr=args.lr
                            )
 
