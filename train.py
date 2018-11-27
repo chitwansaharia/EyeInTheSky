@@ -16,6 +16,8 @@ import torch.nn.functional as F
 parser = argparse.ArgumentParser()
 parser.add_argument("--model", default=None,
                     help="Name of the model to be trained")
+parser.add_argument("--data_dir", default=os.getcwd(),
+					help="directory to store data")
 parser.add_argument("--batch-size", type=int, default=10,
                     help="Batch size used while training/validating")
 parser.add_argument("--lr", type=float, default=1e-3,
@@ -125,10 +127,10 @@ if __name__ == "__main__":
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     # Creating logging and saved models directory
-    create_if_not_exists()
+    create_if_not_exists(args)
 
-    model_path = "{}/{}.pt".format("saved_models", args.model)
-    log_path = "{}/{}".format("tb_logs", args.model)
+    model_path = os.path.join(args.data_dir, 'saved_models', args.model)
+    log_path = os.path.join(args.data_dir, 'tb_logs', args.model)
 
     tb_writer = SummaryWriter(log_path)
 
