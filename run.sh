@@ -1,0 +1,5 @@
+#!/bin/bash
+
+python test.py --model Unet --data_dir /mnt/blossom/more/sheshansh/EyeInTheSky/data/ --test_data /mnt/blossom/more/sheshansh/EyeInTheSky/data/valid_sat/ --label_data /mnt/blossom/more/sheshansh/EyeInTheSky/data/valid_gt/ --nsigma 1.0 --predictions_dir pred1_0 > log1_0
+python test.py --model Unet --data_dir /mnt/blossom/more/sheshansh/EyeInTheSky/data/ --test_data /mnt/blossom/more/sheshansh/EyeInTheSky/data/valid_sat/ --label_data /mnt/blossom/more/sheshansh/EyeInTheSky/data/valid_gt/ --nsigma 1.5 --predictions_dir pred1_5 > log1_5
+python test.py --model Unet --data_dir /mnt/blossom/more/sheshansh/EyeInTheSky/data/ --test_data /mnt/blossom/more/sheshansh/EyeInTheSky/data/valid_sat/ --label_data /mnt/blossom/more/sheshansh/EyeInTheSky/data/valid_gt/ --nsigma 2.0 --predictions_dir pred2_0 > log2_0

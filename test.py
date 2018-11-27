@@ -26,6 +26,10 @@ parser.add_argument("--label_data", default=None,
 					help="Path to label images for test")
 parser.add_argument("--num-channels", type=int, default=4,
                     help="number of channels of imput image to use (3 or 4)")
+parser.add_argument("--nsigma", type=float, default=1.5,
+                    help="Number of sigma to cover in mask")
+parser.add_argument("--predictions_dir", default='predictions',
+                    help="Name of predictions folder")
 
 
 def gkern(kernlen=21, nsig=3):
@@ -77,8 +81,8 @@ def main():
 	predicted_labels = []
 	true_labels = []
 	
-	if not os.path.exists(os.path.join(args.test_data,'predictions')):
-		os.mkdir(os.path.join(args.test_data,'predictions'))
+	if not os.path.exists(os.path.join(args.test_data,args.predictions_dir)):
+		os.mkdir(os.path.join(args.test_data,args.predictions_dir))
 
 	for file in os.listdir(args.test_data):
 		if not file.endswith('.tif'):
@@ -96,7 +100,7 @@ def main():
 		weights, pred_image = np.zeros(pred_shape), np.zeros(pred_shape)
 
 		# TODO maybe tune the sigma here
-		weight_mask = weight_mask = np.repeat(gkern(mask_dim, 1.5), \
+		weight_mask = weight_mask = np.repeat(gkern(mask_dim, args.nsigma), \
 			num_classes).reshape([mask_dim, mask_dim, num_classes])
 
 		for x_index, y_index in itertools.product(x_indices, y_indices):
@@ -114,7 +118,6 @@ def main():
 			image_batch = np.array(image_batch)
 			predictions = model(torch.Tensor(image_batch).cuda())
 
-			# TODO Would have to check with and without this line
 			predictions = torch.softmax(predictions, 1)
 			
 			predictions = predictions.detach().cpu().numpy()
@@ -152,7 +155,7 @@ def main():
 			color_image[ix, iy, :] = map_dict[pred_image[ix, iy]]
 		im = Image.fromarray(np.uint8(color_image))
 		
-		im.save(os.path.join(args.test_data, 'predictions', file))
+		im.save(os.path.join(args.test_data, args.predictions_dir, file))
 		
 		if args.label_data is not None:
 			predicted_labels.extend(list(pred_image.reshape([-1])))
