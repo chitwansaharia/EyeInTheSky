@@ -106,6 +106,8 @@ def run_epoch(model, epoch, data_loader, device, mode="train", writer=None):
                                                                                           total_score/(i+1)))
 
         i += 1
+
+    model.train()
     return total_loss/i, total_score/i
 
 if __name__ == "__main__":
