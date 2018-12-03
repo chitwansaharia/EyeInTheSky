@@ -163,7 +163,7 @@ if __name__ == "__main__":
     train_y_dir = 'gt'
     val_x_dir = 'valid_sat'
     val_y_dir = 'valid_gt'
-    root_dir = 'data'
+    root_dir = args.data_dir
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
