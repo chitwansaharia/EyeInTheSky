@@ -56,7 +56,9 @@ class SatelliteDataset(Dataset):
         _rotate_angle = np.random.uniform(0, 360)
 
         rotated_combined = skimage.transform.rotate(cropped_combined, angle=_rotate_angle, mode='symmetric',preserve_range=True)
+        
         final_image = np.transpose(rotated_combined[:,:,:self.num_channels], (2,0,1))
+
         return self.normalize(final_image.astype(np.float32)), rotated_combined[:,:,-1]
 
     def normalize(self, image):
