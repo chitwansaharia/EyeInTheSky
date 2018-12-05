@@ -15,7 +15,7 @@ class SatelliteDataset(Dataset):
     Only to be used during training and validation
     """
 
-    def __init__(self, x_dir, y_dir, root_dir, crop_dim, num_channels):
+    def __init__(self, x_dir, y_dir, root_dir, crop_dim, num_channels, contrast_enhance):
         """
         Args:
             x_dir (string) : directory that contains satellite images.
@@ -34,7 +34,14 @@ class SatelliteDataset(Dataset):
                 continue
             file_name = file_name[0]
             image = tiff.imread("{}/{}".format(x_path, file))
-            x_list.append(skimage.exposure.rescale_intensity(image, in_range='image', out_range='uint8'))
+            image = skimage.exposure.rescale_intensity(image, in_range='image', out_range='uint8')
+
+            if contrast_enhance:
+                image_rgb_ce = skimage.exposure.equalize_adapthist(image, kernel_size=None, clip_limit=0.01, nbins=256)
+                image_nir = skimage.exposure.equalize_adapthist(image[:,:,-1], kernel_size=None, clip_limit=0.01, nbins=256)
+                image = np.concatenate([image_rgb_ce, np.expand_dims(image_nir, axis=2)], axis=2)*255
+
+            x_list.append(image)
             y_list.append(np.expand_dims(np.load("{}/{}".format(y_path, '{}.npy'.format(file_name))), axis=2))
 
         self.images, self.masks = x_list, y_list
@@ -56,9 +63,12 @@ class SatelliteDataset(Dataset):
         _rotate_angle = np.random.uniform(0, 360)
 
         rotated_combined = skimage.transform.rotate(cropped_combined, angle=_rotate_angle, mode='symmetric',preserve_range=True)
-        
-        final_image = np.transpose(rotated_combined[:,:,:self.num_channels], (2,0,1))
 
+        flip = np.random.choice(3)
+        if flip < 2:
+            rotated_combined = np.flip(rotated_combined, axis=flip).copy()
+
+        final_image = np.transpose(rotated_combined[:,:,:self.num_channels], (2,0,1))
         return self.normalize(final_image.astype(np.float32)), rotated_combined[:,:,-1]
 
     def normalize(self, image):

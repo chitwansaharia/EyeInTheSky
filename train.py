@@ -8,6 +8,7 @@ from sklearn import metrics
 from models import unet
 import argparse
 import os
+import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -46,7 +47,10 @@ parser.add_argument("--class-number", type=int, default=1,
                     help="class number to train a model for")
 parser.add_argument("--train-per-class", action="store_true",
                     help="train a network for a single class")
-
+parser.add_argument("--seed", type=int, default=0,
+                    help="setting random seed for the experiment")
+parser.add_argument("--contrast-enhance", action="store_true",
+                    help="use contrast enhancement on the image")
 
 epsilon = 0.02
 class_ratios = [0.01102408653432332,
@@ -66,6 +70,13 @@ class_weights = [(weight)/sum(class_weights) for weight in class_weights]
 print(class_weights)
 args = parser.parse_args()
 print(args)
+
+def seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def calc_class_weight(class_):
@@ -155,6 +166,7 @@ def run_epoch(model, epoch, data_loader, device, mode="train", writer=None):
 
 if __name__ == "__main__":
     args = parser.parse_args()
+    seed(args.seed)
     num_classes = 9
     done_epochs = 0
     best_metric = 0
@@ -163,7 +175,7 @@ if __name__ == "__main__":
     train_y_dir = 'gt'
     val_x_dir = 'valid_sat'
     val_y_dir = 'valid_gt'
-    root_dir = args.data_dir
+    root_dir = 'data'
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
@@ -177,26 +189,25 @@ if __name__ == "__main__":
 
     # Dataset Loader
     train_loader = torch.utils.data.DataLoader(
-                                SatelliteDataset(train_x_dir, train_y_dir, root_dir, args.crop_dim, args.num_channels),
+                                SatelliteDataset(train_x_dir, train_y_dir, root_dir, args.crop_dim, args.num_channels, args.contrast_enhance),
                                 batch_size = args.batch_size,
                                 shuffle = True
                                 )
     val_loader = torch.utils.data.DataLoader(
-                                SatelliteDataset(val_x_dir, val_y_dir, root_dir, args.crop_dim, args.num_channels),
+                                SatelliteDataset(val_x_dir, val_y_dir, root_dir, args.crop_dim, args.num_channels, args.contrast_enhance),
                                 batch_size = args.batch_size,
                                 shuffle = False
                                 )
     class_weights = torch.tensor(class_weights).to(device)
 
     if args.train_per_class:
-        # loss_criterion = None
         loss_criterion = nn.BCEWithLogitsLoss()
         model = unet.UNet(args.num_channels, 1)
         weight = calc_class_weight(args.class_number)
         print(weight)
     else:
         model = unet.UNet(args.num_channels, num_classes)
-        loss_criterion = nn.CrossEntropyLoss(weight = class_weights)
+        loss_criterion = nn.CrossEntropyLoss()
 
 
     optimizer = torch.optim.Adam(model.parameters(),
