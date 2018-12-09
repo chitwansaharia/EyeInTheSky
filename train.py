@@ -106,7 +106,7 @@ def run_epoch(model, epoch, data_loader, device, mode="train", writer=None):
         image, true_mask = image.to(device), mask.to(device).long()
 
         if args.train_per_class:
-            true_mask = (true_mask == args.class_number)
+            true_mask = (true_mask == args.class_number).long()
 
         if mode is not "train":
             with torch.no_grad():
@@ -115,10 +115,9 @@ def run_epoch(model, epoch, data_loader, device, mode="train", writer=None):
             out_mask = model(image)
 
         if args.train_per_class:
-            loss = loss_criterion(out_mask.squeeze(1), true_mask.float())
-            sigmoid = nn.Sigmoid()
+            loss = loss_criterion(out_mask, true_mask)
             # out_mask = torch.clamp(sigmoid(out_mask), 1e-10, 1-1e-10)
-            loss = torch.mean(torch.neg(true_mask*torch.log(sigmoid(out_mask)) + (1-true_mask)*torch.log(1-sigmoid(out_mask))))
+            # loss = torch.mean(torch.neg(true_mask*torch.log(sigmoid(out_mask)) + (1-true_mask)*torch.log(1-sigmoid(out_mask))))
         else:
             loss = loss_criterion(out_mask, true_mask)
 
@@ -132,15 +131,13 @@ def run_epoch(model, epoch, data_loader, device, mode="train", writer=None):
             total_grad_norm += grad_norm.item()
 
         if args.train_per_class:
-            pred_labels = F.sigmoid(out_mask)
-            pred_labels[pred_labels > 0.5] = 1
-            pred_labels = pred_labels.view(-1).long()
+            pred_labels = torch.argmax(out_mask, 1).view(-1)
         else:
             pred_labels = torch.argmax(out_mask, 1).view(-1)
 
         score = sklearn.metrics.cohen_kappa_score(pred_labels.detach().cpu().numpy(), true_mask.view(-1).cpu().numpy())
 
-        total_accuracy += (pred_labels == true_mask.view(-1)).sum().item()
+        total_accuracy += (pred_labels == true_mask.long().view(-1)).sum().item()
         total_preds += pred_labels.numel()
 
         if not math.isnan(score):
@@ -201,10 +198,8 @@ if __name__ == "__main__":
     class_weights = torch.tensor(class_weights).to(device)
 
     if args.train_per_class:
-        loss_criterion = nn.BCEWithLogitsLoss()
-        model = unet.UNet(args.num_channels, 1)
-        weight = calc_class_weight(args.class_number)
-        print(weight)
+        loss_criterion = nn.CrossEntropyLoss(torch.tensor([0.2, 0.8]).to(device))
+        model = unet.UNet(args.num_channels, 2)
     else:
         model = unet.UNet(args.num_channels, num_classes)
         loss_criterion = nn.CrossEntropyLoss()

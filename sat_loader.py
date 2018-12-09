@@ -7,7 +7,7 @@ from skimage import transform
 import numpy as np
 import os
 import random
-
+import torch
 
 class SatelliteDataset(Dataset):
     """
@@ -34,7 +34,9 @@ class SatelliteDataset(Dataset):
                 continue
             file_name = file_name[0]
             image = tiff.imread("{}/{}".format(x_path, file))
-            image = skimage.exposure.rescale_intensity(image, in_range='image', out_range='uint8')
+
+            # Rescales Intensity
+            # image = skimage.exposure.rescale_intensity(image, in_range='image', out_range='uint8')
 
             if contrast_enhance:
                 image_rgb_ce = skimage.exposure.equalize_adapthist(image, kernel_size=None, clip_limit=0.01, nbins=256)
@@ -43,6 +45,8 @@ class SatelliteDataset(Dataset):
 
             x_list.append(image)
             y_list.append(np.expand_dims(np.load("{}/{}".format(y_path, '{}.npy'.format(file_name))), axis=2))
+        self.mean = [212.34, 291.38, 183.29, 335.85,0.12]
+        self.std = [80.87, 134.81, 114.16, 213.50, 0.33]
 
         self.images, self.masks = x_list, y_list
         self.length = len(self.images)
@@ -68,11 +72,34 @@ class SatelliteDataset(Dataset):
         if flip < 2:
             rotated_combined = np.flip(rotated_combined, axis=flip).copy()
 
-        final_image = np.transpose(rotated_combined[:,:,:self.num_channels], (2,0,1))
-        return self.normalize(final_image.astype(np.float32)), rotated_combined[:,:,-1]
+        # ndwi_channel = (rotated_combined[:,:,1] - rotated_combined[:,:,3])/(rotated_combined[:,:,1] + rotated_combined[:,:,3])
+        # ndwi_channel[ndwi_channel < 0] = 0
+        #
+        # final_image = self.normalize(rotated_combined[:,:,:min(self.num_channels, 4)].astype(np.float32))
+        #
+        # if self.num_channels >= 5:
+        #     final_image = np.concatenate([final_image, np.expand_dims(nir_channel,axis=2)], axis=2).astype(np.float32)
+        #
+        # if self.num_channels == 6:
+        #     savi_channel = (1.5)*(final_image[:,:,3] - final_image[:,:,0])/(final_image[:,:,3] + final_image[:,:,0] + 0.5)
+        #     final_image = np.concatenate([final_image, np.expand_dims(savi_channel,axis=2)], axis=2).astype(np.float32)
+
+        final_image = rotated_combined[:,:,:min(self.num_channels, 4)].astype(np.float32)
+
+        ndvi_channel = (final_image[:,:,3] - final_image[:,:,0] + 1e-10)/(final_image[:,:,3] + final_image[:,:,0] + 1e-10)
+        ndvi_channel = np.expand_dims(ndvi_channel, axis=2)
+
+        if self.num_channels == 5:
+            final_image = np.concatenate((final_image, ndvi_channel), axis=2)
+
+        final_image = torch.tensor(np.transpose(final_image, (2,0,1)))
+        self.normalize(final_image)
+
+        return final_image.float(), torch.tensor(rotated_combined[:,:,-1])
 
     def normalize(self, image):
-        return image/255.0
+        for t, m, s in zip(image, self.mean[:self.num_channels], self.std[:self.num_channels]):
+            t.sub_(m).div_(s)
 
 
 class customRandomCrop(object):
