@@ -8,6 +8,8 @@ import numpy as np
 import os
 import random
 import torch
+import scipy
+from scipy import ndimage
 
 class SatelliteDataset(Dataset):
     """
@@ -15,7 +17,7 @@ class SatelliteDataset(Dataset):
     Only to be used during training and validation
     """
 
-    def __init__(self, x_dir, y_dir, root_dir, crop_dim, num_channels, contrast_enhance):
+    def __init__(self, x_dir, y_dir, root_dir, crop_dim, num_channels, contrast_enhance, gaussian_blur):
         """
         Args:
             x_dir (string) : directory that contains satellite images.
@@ -24,6 +26,8 @@ class SatelliteDataset(Dataset):
         """
         self.crop_dim = crop_dim
         self.num_channels = num_channels
+        self.gaussian_blur = gaussian_blur
+
         x_list, y_list = [], []
         x_path = "{}/{}".format(root_dir, x_dir)
         y_path = "{}/{}".format(root_dir, y_dir)
@@ -55,7 +59,7 @@ class SatelliteDataset(Dataset):
         self.rcrop = customRandomCrop(crop_dim)
 
     def __len__(self):
-        return 100*self.length
+        return 200*self.length
 
     def __getitem__(self, idx):
         sample_x, sample_y = self.images[idx%self.length], self.masks[idx%self.length]
@@ -95,11 +99,24 @@ class SatelliteDataset(Dataset):
         final_image = torch.tensor(np.transpose(final_image, (2,0,1)))
         self.normalize(final_image)
 
-        return final_image.float(), torch.tensor(rotated_combined[:,:,-1])
+        if self.gaussian_blur:
+            mask = self.gaussian_smooth(torch.tensor(rotated_combined[:,:,-1]))
+        else:
+            mask = rotated_combined[:,:,-1]
+
+        return final_image.float(), torch.tensor(mask), torch.tensor(rotated_combined[:,:,-1])
 
     def normalize(self, image):
         for t, m, s in zip(image, self.mean[:self.num_channels], self.std[:self.num_channels]):
             t.sub_(m).div_(s)
+
+    def gaussian_smooth(self, mask):
+        one_hot_mask = torch.zeros([9, self.crop_dim, self.crop_dim])
+        one_hot_mask.zero_()
+        one_hot_mask.scatter_(0, mask.long().unsqueeze(0), 1.)
+        nmask = scipy.ndimage.filters.gaussian_filter(one_hot_mask.numpy(), sigma=[0, 5, 5])
+        mask_sum = np.sum(nmask, axis=0)
+        return np.divide(nmask, np.expand_dims(mask_sum,0))
 
 
 class customRandomCrop(object):

@@ -51,23 +51,10 @@ parser.add_argument("--seed", type=int, default=0,
                     help="setting random seed for the experiment")
 parser.add_argument("--contrast-enhance", action="store_true",
                     help="use contrast enhancement on the image")
-
-epsilon = 0.02
-class_ratios = [0.01102408653432332,
- 0.38734624424958136,
- 0.0789222155760665,
- 0.2281258281980753,
- 0.009065123031916075,
- 0.1546437547901186,
- 0.06300211642357074,
- 0.06647036563878951,
- 0.001400265557558575]
-
-class_weights = [(1+epsilon)/(ratio+epsilon) for ratio in class_ratios]
-class_weights = [(weight)/sum(class_weights) for weight in class_weights]
+parser.add_argument("--gaussian-blur", action="store_true",
+                    help="perform gaussian blur on the one-hot mask")
 
 
-print(class_weights)
 args = parser.parse_args()
 print(args)
 
@@ -102,8 +89,13 @@ def run_epoch(model, epoch, data_loader, device, mode="train", writer=None):
 
     i = 0
 
-    for image, mask in data_loader:
-        image, true_mask = image.to(device), mask.to(device).long()
+    for image, mask, label in data_loader:
+        image, true_mask, true_label = image.to(device), mask.to(device), label.to(device)
+
+        if not args.gaussian_blur:
+            true_mask = true_mask.long()
+        else:
+            true_mask = true_mask.float()
 
         if args.train_per_class:
             true_mask = (true_mask == args.class_number).long()
@@ -114,12 +106,7 @@ def run_epoch(model, epoch, data_loader, device, mode="train", writer=None):
         else:
             out_mask = model(image)
 
-        if args.train_per_class:
-            loss = loss_criterion(out_mask, true_mask)
-            # out_mask = torch.clamp(sigmoid(out_mask), 1e-10, 1-1e-10)
-            # loss = torch.mean(torch.neg(true_mask*torch.log(sigmoid(out_mask)) + (1-true_mask)*torch.log(1-sigmoid(out_mask))))
-        else:
-            loss = loss_criterion(out_mask, true_mask)
+        loss = loss_criterion(out_mask, true_mask)
 
         if mode == "train":
             optimizer.zero_grad()
@@ -130,14 +117,12 @@ def run_epoch(model, epoch, data_loader, device, mode="train", writer=None):
             optimizer.step()
             total_grad_norm += grad_norm.item()
 
-        if args.train_per_class:
-            pred_labels = torch.argmax(out_mask, 1).view(-1)
-        else:
-            pred_labels = torch.argmax(out_mask, 1).view(-1)
 
-        score = sklearn.metrics.cohen_kappa_score(pred_labels.detach().cpu().numpy(), true_mask.view(-1).cpu().numpy())
+        pred_labels = torch.argmax(out_mask, 1).view(-1)
 
-        total_accuracy += (pred_labels == true_mask.long().view(-1)).sum().item()
+        score = sklearn.metrics.cohen_kappa_score(pred_labels.detach().cpu().numpy(), true_label.long().view(-1).cpu().numpy())
+
+        total_accuracy += (pred_labels == true_label.long().view(-1)).sum().item()
         total_preds += pred_labels.numel()
 
         if not math.isnan(score):
@@ -186,24 +171,31 @@ if __name__ == "__main__":
 
     # Dataset Loader
     train_loader = torch.utils.data.DataLoader(
-                                SatelliteDataset(train_x_dir, train_y_dir, root_dir, args.crop_dim, args.num_channels, args.contrast_enhance),
+                                SatelliteDataset(train_x_dir, train_y_dir, root_dir, args.crop_dim, args.num_channels, args.contrast_enhance, args.gaussian_blur),
                                 batch_size = args.batch_size,
                                 shuffle = True
                                 )
     val_loader = torch.utils.data.DataLoader(
-                                SatelliteDataset(val_x_dir, val_y_dir, root_dir, args.crop_dim, args.num_channels, args.contrast_enhance),
+                                SatelliteDataset(val_x_dir, val_y_dir, root_dir, args.crop_dim, args.num_channels, args.contrast_enhance, args.gaussian_blur),
                                 batch_size = args.batch_size,
                                 shuffle = False
                                 )
-    class_weights = torch.tensor(class_weights).to(device)
 
     if args.train_per_class:
         loss_criterion = nn.CrossEntropyLoss(torch.tensor([0.2, 0.8]).to(device))
         model = unet.UNet(args.num_channels, 2)
+    elif not args.gaussian_blur:
+        model = unet.UNet(args.num_channels, num_classes)
+        # weights = [1]*num_classes
+        # weights[2] = 4
+        # weights[7] = 4
+        # weights[1] = 0.4
+        # print(weights)
+        # loss_criterion = nn.CrossEntropyLoss(weight = torch.tensor(weights).to(device))
+        loss_criterion = nn.CrossEntropyLoss()
     else:
         model = unet.UNet(args.num_channels, num_classes)
-        loss_criterion = nn.CrossEntropyLoss()
-
+        loss_criterion = nn.BCEWithLogitsLoss()
 
     optimizer = torch.optim.Adam(model.parameters(),
                            lr=args.lr
