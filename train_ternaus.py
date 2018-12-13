@@ -250,8 +250,3 @@ if __name__ == "__main__":
             'opt_state_dict': optimizer.state_dict(),
             'best_metric' : best_metric
             }, model_path)
-
-
-
-
-

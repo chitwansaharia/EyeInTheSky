@@ -3,7 +3,7 @@
 import argparse
 import itertools
 import numpy as np
-from models import unet
+from models.TernausNetV2.models.ternausnet2 import TernausNetV2
 import os
 from PIL import Image
 import skimage
@@ -68,20 +68,22 @@ def gen_indices(max_index, step):
 
 def main():
 	num_classes = 9
-	mask_dim = 128
+	mask_dim = 256
 
 	args = parser.parse_args()
 	model_path = os.path.join(args.data_dir, 'saved_models', args.model)
 	# Load the pretrained model
 	saved_data = torch.load(model_path)
-	model = unet.UNet(args.num_channels, num_classes).cuda()
+	model = TernausNetV2(num_classes = num_classes).cuda()
 	model.load_state_dict(saved_data["model_state_dict"])
+	model.eval()
 	done_epochs = saved_data["epochs"]
 	best_metric = saved_data["best_metric"]
-
+	
 	predicted_labels = []
+	predicted_labels_images = {}
 	true_labels = []
-
+	
 	if not os.path.exists(os.path.join(args.test_data,args.predictions_dir)):
 		os.mkdir(os.path.join(args.test_data,args.predictions_dir))
 
@@ -90,24 +92,30 @@ def main():
 			continue
 		print("Processing file: {}".format(file))
 		image = tiff.imread(os.path.join(args.test_data, file))
-		base_image = skimage.exposure.rescale_intensity(image,
-						in_range='image', out_range='uint8')
-		base_image = base_image/255.0
+		base_image = image
+		# base_image = skimage.exposure.rescale_intensity(image,
+		# 				in_range='image', out_range='uint8')
+		# base_image = base_image/255.0
+		mean = [212.34, 291.38, 183.29, 335.85,0.12]
+		std = [80.87, 134.81, 114.16, 213.50, 0.33]
+
+		num_channels = base_image.shape[2]
+		base_image = base_image.astype(float)
+		for i in range(num_channels):
+			base_image[:,:,i] = (base_image[:,:,i]-mean[i])/std[i]
 		margin = mask_dim // 10
 		if args.crop_end:
-			num_channels = base_image.shape[2]
 			base_image = np.moveaxis(np.array([np.pad(base_image[:,:,channel], ((margin,margin),(margin,margin)), 'reflect') for channel in range(num_channels)]), 0, 2)
-			x_indices = gen_indices(base_image.shape[0], mask_dim-2*margin)
-			y_indices = gen_indices(base_image.shape[1], mask_dim-2*margin)
-		else:
-			x_indices = gen_indices(base_image.shape[0], mask_dim)
-			y_indices = gen_indices(base_image.shape[1], mask_dim)
+
+		
+		x_indices = gen_indices(base_image.shape[0], mask_dim)
+		y_indices = gen_indices(base_image.shape[1], mask_dim)
 
 		pred_shape = [base_image.shape[0], base_image.shape[1], num_classes]
 		weights, pred_image = np.zeros(pred_shape), np.zeros(pred_shape)
 
 		# TODO maybe tune the sigma here
-		weight_mask = np.repeat(gkern(mask_dim, args.nsigma), \
+		weight_mask = weight_mask = np.repeat(gkern(mask_dim, args.nsigma), \
 			num_classes).reshape([mask_dim, mask_dim, num_classes])
 		if args.crop_end:
 			margin = mask_dim // 10
@@ -153,18 +161,19 @@ def main():
 				index_image += 2
 
 			candidates = np.array(candidates)
-			prediction = np.mean(candidates, 0)
-			
+
 			weights[x_index:x_index+mask_dim,y_index:y_index+mask_dim,:] \
 						+= weight_mask
 			pred_image[x_index:x_index+mask_dim,y_index:y_index+mask_dim,:]\
-						+= weight_mask*prediction
+						+= weight_mask*np.mean(candidates, 0)
 
 		pred_image /= weights
-		pred_image = np.argmax(pred_image, 2)
-
+		# pred_image[:,:,1] = float('-inf')
+		predicted_labels_images[file] = pred_image
 		if args.crop_end:
 			pred_image = pred_image[margin:-margin,margin:-margin]
+		pred_image = np.argmax(pred_image, 2)
+
 
 		color_image = np.zeros([base_image.shape[0], base_image.shape[1], 3])
 		for ix,iy in np.ndindex(pred_image.shape):
@@ -174,10 +183,10 @@ def main():
 		im.save(os.path.join(args.test_data, args.predictions_dir, file))
 		
 		if args.label_data is not None:
+			predicted_labels.extend(list(pred_image.reshape([-1])))
 			file_name = file.split('.')[0]
 			label_path = os.path.join(args.label_data, '{}.npy'.\
 								format(file_name))
-			predicted_labels.extend(list(pred_image.reshape([-1])))
 			flat_true_label = np.expand_dims(np.load(label_path),
 								axis=2).reshape(-1)
 			true_labels.extend(list(flat_true_label))
@@ -186,9 +195,18 @@ def main():
 	if args.label_data is not None:
 		predicted_labels = np.array(predicted_labels)
 		true_labels = np.array(true_labels)
+		# predicted_labels = predicted_labels[true_labels!=1]
+		# true_labels = true_labels[true_labels!=1]
+		print("Accuracy on these images : {}".format(
+			sklearn.metrics.accuracy_score(predicted_labels, true_labels)))
 		print("Cohen kappa score on these images : {}".format(
 			sklearn.metrics.cohen_kappa_score(predicted_labels, true_labels)))			
+		print("Confusion matrix on these images : {}".format(
+			sklearn.metrics.confusion_matrix(true_labels, predicted_labels)))
+		print("Precision recall class F1 : {}".format(
+			sklearn.metrics.precision_recall_fscore_support(true_labels, predicted_labels)))
 
+	np.save(os.path.join(args.data_dir, 'saved_predictions', args.model+'_test.npy'), predicted_labels_images)
 
 if __name__ == "__main__":
 	main()
