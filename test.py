@@ -30,6 +30,8 @@ parser.add_argument("--nsigma", type=float, default=1.5,
                     help="Number of sigma to cover in mask")
 parser.add_argument("--predictions_dir", default='predictions',
                     help="Name of predictions folder")
+parser.add_argument("--crop-end", action="store_true",
+                    help="use crop in the end of the model")
 
 
 def gkern(kernlen=21, nsig=3):
@@ -66,21 +68,21 @@ def gen_indices(max_index, step):
 
 def main():
 	num_classes = 9
-	mask_dim = 256
+	mask_dim = 128
 
 	args = parser.parse_args()
 	model_path = os.path.join(args.data_dir, 'saved_models', args.model)
 	# Load the pretrained model
 	saved_data = torch.load(model_path)
 	model = unet.UNet(args.num_channels, num_classes).cuda()
+	import pdb; pdb.set_trace()
 	model.load_state_dict(saved_data["model_state_dict"])
-	model.eval()
 	done_epochs = saved_data["epochs"]
 	best_metric = saved_data["best_metric"]
-	
+
 	predicted_labels = []
 	true_labels = []
-	
+
 	if not os.path.exists(os.path.join(args.test_data,args.predictions_dir)):
 		os.mkdir(os.path.join(args.test_data,args.predictions_dir))
 
@@ -92,16 +94,28 @@ def main():
 		base_image = skimage.exposure.rescale_intensity(image,
 						in_range='image', out_range='uint8')
 		base_image = base_image/255.0
-
-		x_indices = gen_indices(base_image.shape[0], mask_dim)
-		y_indices = gen_indices(base_image.shape[1], mask_dim)
+		margin = mask_dim // 10
+		if args.crop_end:
+			num_channels = base_image.shape[2]
+			base_image = np.moveaxis(np.array([np.pad(base_image[:,:,channel], ((margin,margin),(margin,margin)), 'reflect') for channel in range(num_channels)]), 0, 2)
+			x_indices = gen_indices(base_image.shape[0], mask_dim-2*margin)
+			y_indices = gen_indices(base_image.shape[1], mask_dim-2*margin)
+		else:
+			x_indices = gen_indices(base_image.shape[0], mask_dim)
+			y_indices = gen_indices(base_image.shape[1], mask_dim)
 
 		pred_shape = [base_image.shape[0], base_image.shape[1], num_classes]
 		weights, pred_image = np.zeros(pred_shape), np.zeros(pred_shape)
 
 		# TODO maybe tune the sigma here
-		weight_mask = weight_mask = np.repeat(gkern(mask_dim, args.nsigma), \
+		weight_mask = np.repeat(gkern(mask_dim, args.nsigma), \
 			num_classes).reshape([mask_dim, mask_dim, num_classes])
+		if args.crop_end:
+			margin = mask_dim // 10
+			weight_mask[:margin,:] = 0
+			weight_mask[:,:margin] = 0
+			weight_mask[:,-margin:] = 0
+			weight_mask[-margin:,:] = 0
 
 		for x_index, y_index in itertools.product(x_indices, y_indices):
 			subimage = base_image[x_index:x_index+mask_dim,\
@@ -140,15 +154,18 @@ def main():
 				index_image += 2
 
 			candidates = np.array(candidates)
-
+			prediction = np.mean(candidates, 0)
+			
 			weights[x_index:x_index+mask_dim,y_index:y_index+mask_dim,:] \
 						+= weight_mask
 			pred_image[x_index:x_index+mask_dim,y_index:y_index+mask_dim,:]\
-						+= weight_mask*np.mean(candidates, 0)
+						+= weight_mask*prediction
 
 		pred_image /= weights
 		pred_image = np.argmax(pred_image, 2)
 
+		if args.crop_end:
+			pred_image = pred_image[margin:-margin,margin:-margin]
 
 		color_image = np.zeros([base_image.shape[0], base_image.shape[1], 3])
 		for ix,iy in np.ndindex(pred_image.shape):
@@ -158,10 +175,10 @@ def main():
 		im.save(os.path.join(args.test_data, args.predictions_dir, file))
 		
 		if args.label_data is not None:
-			predicted_labels.extend(list(pred_image.reshape([-1])))
 			file_name = file.split('.')[0]
 			label_path = os.path.join(args.label_data, '{}.npy'.\
 								format(file_name))
+			predicted_labels.extend(list(pred_image.reshape([-1])))
 			flat_true_label = np.expand_dims(np.load(label_path),
 								axis=2).reshape(-1)
 			true_labels.extend(list(flat_true_label))
