@@ -44,8 +44,15 @@ We first randomly crop a section from the image (size specified with `--crop-dim
 ### Testing
 `test.py` can be used to test the model once, some model is trained. 
 The most basic command to run this is : 
-`python3 train.py --model <model name>.pt --test-data <directory containing validation images> --out-dir <directory to save output images>`
+`python3 test.py --model <model name>.pt --test-data <directory containing validation images> --out-dir <directory to save output images>`
 Add all the other non-default arguments used while training as well.
 Additionally, test.py supports these arguments
   * `--pkl-dir` : The directory to store the pickle file for model outputs as a dictionary. Pickle would be used for ensembling. If not present, the pickle file is not saved.
   * `nsigma` : While deblocking the standard deviation for gaussian mask as a multiple of mask dimension.
+  
+`ensemble.py` can be used to test the ensemble of various models. To use this, do the following:
+   * Using `test.py` generate the prediction pickle files for all the models separately. 
+   * Change the list `pickle_files` in `ensemble.py` with the required predictions files you want to take ensemble of.
+   * run `python3 ensemble.py --pred-dir <directory to store predicted masks> --label-data <path to ground truth>`
+   * If path to ground truth is provided, then it evaluates the model at the end. 
+   
