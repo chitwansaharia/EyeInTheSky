@@ -48,7 +48,7 @@ The most basic command to run this is :
 Add all the other non-default arguments used while training as well.
 Additionally, test.py supports these arguments
   * `--pkl-dir` : The directory to store the pickle file for model outputs as a dictionary. Pickle would be used for ensembling. If not present, the pickle file is not saved.
-  * `nsigma` : While deblocking the standard deviation for gaussian mask as a multiple of mask dimension.
+  * `--nsigma` : While deblocking the standard deviation for gaussian mask as a multiple of mask dimension.
   
 `ensemble.py` can be used to test the ensemble of various models. To use this, do the following:
    * Using `test.py` generate the prediction pickle files for all the models separately. 
