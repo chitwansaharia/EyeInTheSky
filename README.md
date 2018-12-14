@@ -42,3 +42,10 @@ Main command line arguments that can be used with `train.py`:
 We first randomly crop a section from the image (size specified with `--crop-dim`, and then perform random rotation of the cropped section (0-360 degrees), and then perform random flip (horizontal, vertical or no flip). When performing rotation, reflection is used to maintain the dimension of the image. 
 
 ### Testing
+`test.py` can be used to test the model once, some model is trained. 
+The most basic command to run this is : 
+`python3 train.py --model <model name>.pt --test-data <directory containing validation images> --out-dir <directory to save output images>`
+Add all the other non-default arguments used while training as well.
+Additionally, test.py supports these arguments
+  * `--pkl-dir` : The directory to store the pickle file for model outputs as a dictionary. Pickle would be used for ensembling. If not present, the pickle file is not saved.
+  * `nsigma` : While deblocking the standard deviation for gaussian mask as a multiple of mask dimension.
