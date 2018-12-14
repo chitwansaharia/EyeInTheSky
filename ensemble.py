@@ -10,24 +10,21 @@ import sklearn
 from sklearn import metrics
 import tifffile as tiff
 import torch
-
+import pickle
+import copy
 
 num_classes = 9
-
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--data_dir", default=os.getcwd(),
 					help="directory to store data")
 parser.add_argument("--test_data", required=True, default=None,
 					help="Path to test images")
-# If there are labels, also report the evaluation metrics
 parser.add_argument("--label_data", default=None,
 					help="Path to label images for test")
 parser.add_argument("--num-channels", type=int, default=4,
                     help="number of channels of imput image to use (3 or 4)")
 parser.add_argument("--nsigma", type=float, default=1.5,
                     help="Number of sigma to cover in mask")
-
 
 def gkern(kernlen=21, nsig=3):
     """Returns a 2D Gaussian kernel array."""
@@ -79,7 +76,7 @@ def return_pred_image(args, mask_dim, base_image, model_name):
 						y_index:y_index+mask_dim,:]
 		image_batch = []
 		for rotate_angle in [0,90,180,270]:
-			rotated = skimage.transform.rotate(subimage, 
+			rotated = skimage.transform.rotate(subimage,
 							angle=rotate_angle,
 							mode='symmetric',
 							preserve_range=True)
@@ -90,7 +87,7 @@ def return_pred_image(args, mask_dim, base_image, model_name):
 		predictions = model(torch.Tensor(image_batch).cuda())
 
 		predictions = torch.softmax(predictions, 1)
-		
+
 		predictions = predictions.detach().cpu().numpy()
 		predictions = np.moveaxis(predictions, 1, 3)
 		index_image = 0
@@ -119,14 +116,28 @@ def return_pred_image(args, mask_dim, base_image, model_name):
 	pred_image /= weights
 	return pred_image
 
-def main():
+def normalize(image):
+	mean = [212.34, 291.38, 183.29, 335.85]
+	std = [80.87, 134.81, 114.16, 213.50]
+	for t, m, s in zip(image, mean, std):
+		t.sub_(m).div_(s)
 
+
+def main():
 	args = parser.parse_args()
-	
+	predictions_dir = 'predictions_ens'
+	pickle_files = ["no_rescale_weighted0.2_pretrained.pt.pkl", "ternauspretrain.pt.pkl", "no_rescale_soil_pretrained.pt.pkl"]
+
+	predictions_list = []
 	predicted_labels = []
 	true_labels = []
-	predictions_dir = 'predictions_ens'
-	
+	for file in pickle_files:
+		with open('pkl/{}'.format(file),'rb') as f:
+			u = pickle._Unpickler(f)
+			u.encoding = 'latin1'
+			p = u.load()
+			predictions_list.append(p)
+
 	if not os.path.exists(os.path.join(args.test_data,predictions_dir)):
 		os.mkdir(os.path.join(args.test_data,predictions_dir))
 
@@ -135,64 +146,21 @@ def main():
 			continue
 		print("Processing file: {}".format(file))
 		image = tiff.imread(os.path.join(args.test_data, file))
-		base_image = skimage.exposure.rescale_intensity(image,
-						in_range='image', out_range='uint8')
-		base_image = base_image/255.0
-
 		pred_images = []
-
-		for model_name in ['BaselineModelBS20_s0.pt','BaselineModelBS20_s1.pt','BaselineModelBS20_s2.pt','BaselineModelBS20_s3.pt']:
-			print("Model name {}".format(model_name))
-			mask_dim = 256
-			pred_image = return_pred_image(args, mask_dim, base_image, model_name)
-			pred_images.append(pred_image)
-		
-		# If we want to give different seeds 1/4 weight as that of individual model
-		# pred_images = [np.mean(np.array(pred_images[-4:]), axis=0)]
-
-		# for model_name in ['BaselineModel_BS20_smoothweights']:
-		# 	print("Model name {}".format(model_name))
-		# 	mask_dim = 256
-		# 	pred_image = return_pred_image(args, mask_dim, base_image, model_name)
-		# 	pred_images.append(pred_image)
-
-		# for model_name in ['BaselineModelBS20_s0_64.pt']:
-		# 	print("Model name {}".format(model_name))
-		# 	mask_dim = 64
-		# 	pred_image = return_pred_image(args, mask_dim, base_image, model_name)
-		# 	pred_images.append(pred_image)
-
-		for model_name in ['BaselineModelBS20_s0_128.pt']:
-			print("Model name {}".format(model_name))
-			mask_dim = 128
-			pred_image = return_pred_image(args, mask_dim, base_image, model_name)
-			pred_images.append(pred_image)
-
-		image = tiff.imread(os.path.join(args.test_data, file))
-		image = skimage.exposure.rescale_intensity(image, in_range='image', out_range='uint8')
-		image_rgb_ce = skimage.exposure.equalize_adapthist(image, kernel_size=None, clip_limit=0.01, nbins=256)
-		image_nir = skimage.exposure.equalize_adapthist(image[:,:,-1], kernel_size=None, clip_limit=0.01, nbins=256)
-		base_image = np.concatenate([image_rgb_ce, np.expand_dims(image_nir, axis=2)], axis=2)*255
-		base_image /= 255.0
-
-		for model_name in ['BaselineModelBS20_s0_ce_flip.pt', 'BaselineModelBS20_s0_ce.pt']:
-			print("Model name {}".format(model_name))
-			mask_dim = 256
-			pred_image = return_pred_image(args, mask_dim, base_image, model_name)
-			pred_images.append(pred_image)
+		for index in range(len(predictions_list)):
+			pred_images.append(predictions_list[index][file])
 
 		pred_image = np.mean(np.array(pred_images), axis=0)
-
 		pred_labels = np.argmax(pred_image, 2)
 
-		color_image = np.zeros([base_image.shape[0], base_image.shape[1], 3])
+		# Save Mask as an image after mapping labels to RGB colors
+		color_image = np.zeros([image.shape[0], image.shape[1], 3])
 		for ix,iy in np.ndindex(pred_labels.shape):
 			color_image[ix, iy, :] = map_dict[pred_labels[ix, iy]]
 		im = Image.fromarray(np.uint8(color_image))
-		
 
 		im.save(os.path.join(args.test_data, predictions_dir, file))
-		
+
 		if args.label_data is not None:
 			predicted_labels.extend(list(pred_labels.reshape([-1])))
 			file_name = file.split('.')[0]
@@ -201,18 +169,18 @@ def main():
 			flat_true_label = np.expand_dims(np.load(label_path),
 								axis=2).reshape(-1)
 			true_labels.extend(list(flat_true_label))
-	
-	
+
+
 	if args.label_data is not None:
 		predicted_labels = np.array(predicted_labels)
 		true_labels = np.array(true_labels)
 		print("Cohen kappa score on these images : {}".format(
-			sklearn.metrics.cohen_kappa_score(true_labels, predicted_labels)))			
+			sklearn.metrics.cohen_kappa_score(true_labels, predicted_labels)))
 		print("Confusion matrix on these images : {}".format(
 			sklearn.metrics.confusion_matrix(true_labels, predicted_labels)))
+		print("Accuracy on these images : {}".format(
+			sklearn.metrics.accuracy_score(predicted_labels, true_labels)))
 		print("Precision recall class F1 : {}".format(
 			sklearn.metrics.precision_recall_fscore_support(true_labels, predicted_labels)))
-
-
 if __name__ == "__main__":
 	main()
