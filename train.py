@@ -239,12 +239,12 @@ if __name__ == "__main__":
         lr_scheduler.step()
 
         # Training
-        train_loss, train_metric = run_epoch(model, epoch, train_loader, device, "train", tb_writer)
+        train_loss, train_metric = run_epoch(model, epoch, train_loader, device, "train")
         tb_writer.add_scalar("train_loss_per_epoch", train_loss, epoch)
         tb_writer.add_scalar("train_metric_per_epoch", train_metric, epoch)
 
         # Validating
-        valid_loss, valid_metric = run_epoch(model, epoch, val_loader, device, "valid", tb_writer)
+        valid_loss, valid_metric = run_epoch(model, epoch, val_loader, device, "valid")
         tb_writer.add_scalar("valid_loss_per_epoch", valid_loss, epoch)
         tb_writer.add_scalar("valid_metric_per_epoch", valid_metric, epoch)
 
