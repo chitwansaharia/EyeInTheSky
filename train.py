@@ -54,7 +54,8 @@ parser.add_argument("--contrast-enhance", action="store_true",
                     help="use contrast enhancement on the image")
 parser.add_argument("--gaussian-blur", action="store_true",
                     help="perform gaussian blur on the one-hot mask")
-
+parser.add_argument("--rescale-intensity", action="store_true",
+                    help="rescale the intensity of images to uint8 (0-255)")
 
 args = parser.parse_args()
 print(args)
@@ -176,12 +177,12 @@ if __name__ == "__main__":
 
     # Training and Validation Dataset Loader
     train_loader = torch.utils.data.DataLoader(
-                                SatelliteDataset(train_x_dir, train_y_dir, root_dir, args.crop_dim, args.num_channels, args.contrast_enhance, args.gaussian_blur),
+                                SatelliteDataset(train_x_dir, train_y_dir, root_dir, args.crop_dim, args.num_channels, args.contrast_enhance, args.gaussian_blur, args.rescale_intensity),
                                 batch_size = args.batch_size,
                                 shuffle = True
                                 )
     val_loader = torch.utils.data.DataLoader(
-                                SatelliteDataset(val_x_dir, val_y_dir, root_dir, args.crop_dim, args.num_channels, args.contrast_enhance, args.gaussian_blur),
+                                SatelliteDataset(val_x_dir, val_y_dir, root_dir, args.crop_dim, args.num_channels, args.contrast_enhance, args.gaussian_blur, args.rescale_intensity),
                                 batch_size = args.batch_size,
                                 shuffle = False
                                 )
