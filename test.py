@@ -83,12 +83,19 @@ def gen_indices(max_index, step):
 		indices.append(max_index-step)
 	return indices
 
+
+"""
+Given a 'base_image', run 'model' on it on torch 'device' and return the 
+prediction after applying deblocking and augmentation
+"""
 def return_pred_image(args, base_image, model, device):
 	mask_dim = args.crop_dim
 	margin = mask_dim // 10
 	if args.crop_end:
 		num_channels = base_image.shape[2]
-		base_image = np.moveaxis(np.array([np.pad(base_image[:,:,channel], ((margin,margin),(margin,margin)), 'reflect') for channel in range(num_channels)]), 0, 2)
+		base_image = np.moveaxis(np.array([np.pad(base_image[:,:,channel], 
+						((margin,margin),(margin,margin)), 'reflect') \
+					for channel in range(num_channels)]), 0, 2)
 		x_indices = gen_indices(base_image.shape[0], mask_dim-2*margin)
 		y_indices = gen_indices(base_image.shape[1], mask_dim-2*margin)
 	else:
@@ -163,7 +170,8 @@ def main():
 	args = parser.parse_args()
 	mask_dim = args.crop_dim
 	
-	device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu") # Setting device
+	device = torch.device("cuda") if torch.cuda.is_available() else \
+						 torch.device("cpu") # Setting device
 
 	model_path = os.path.join(args.data_dir, 'saved_models', args.model)
 	# Load the pretrained model
@@ -196,7 +204,9 @@ def main():
 
 		margin = mask_dim // 10
 		if args.crop_end:
-			base_image = np.moveaxis(np.array([np.pad(base_image[:,:,channel], ((margin,margin),(margin,margin)), 'reflect') for channel in range(num_channels)]), 0, 2)
+			base_image = np.moveaxis(np.array([np.pad(base_image[:,:,channel],\
+			 ((margin,margin),(margin,margin)), 'reflect') \
+					for channel in range(num_channels)]), 0, 2)
 
 		
 		pred_image = return_pred_image(args, base_image, model, device)
@@ -231,7 +241,8 @@ def main():
 		print("Confusion matrix on these images : {}".format(
 			sklearn.metrics.confusion_matrix(true_labels, predicted_labels)))
 		print("Precision recall class F1 : {}".format(
-			sklearn.metrics.precision_recall_fscore_support(true_labels, predicted_labels)))
+			sklearn.metrics.precision_recall_fscore_support(true_labels, 
+												predicted_labels)))
 
 	if args.pkl_dir is not None:
 		with open(os.path.join(args.pkl_dir, args.model+'.pkl'),'wb') as f:
